@@ -1,6 +1,6 @@
 ---
 name: android-perf-monitor
-description: Monitor React Native Android app performance via ADB and Flipper/Metro during development — JS thread, bridge, memory, renders — then analyze and optimize
+description: Monitor React Native Android app performance via ADB during development — JS thread, bridge, memory, renders — then run React Compiler ESLint hook, fix violations, and auto-optimize
 ---
 
 # React Native Android Performance Monitor
@@ -326,6 +326,121 @@ useEffect(() => {
   const id = setInterval(tick, 1000);
   return () => clearInterval(id); // cleaned up on unmount
 }, []);
+```
+
+---
+
+## Phase 5b: React Compiler Check (Run After Every Feature)
+
+After finishing a feature or before committing, always run the React Compiler ESLint hook to catch violations and verify the compiler can auto-optimize the code.
+
+### Step 1: Verify React Compiler ESLint Plugin is Set Up
+
+Check if already installed:
+```bash
+cat package.json | grep -E "eslint-plugin-react-compiler|babel-plugin-react-compiler"
+```
+
+If not installed:
+```bash
+# Install ESLint plugin
+npm install --save-dev eslint-plugin-react-compiler
+
+# Install Babel plugin (for compile-time optimization)
+npm install --save-dev babel-plugin-react-compiler
+```
+
+Add to `eslint.config.js` (or `.eslintrc`):
+```js
+// eslint.config.js
+import reactCompiler from 'eslint-plugin-react-compiler';
+
+export default [
+  {
+    plugins: { 'react-compiler': reactCompiler },
+    rules: {
+      'react-compiler/react-compiler': 'error',
+    },
+  },
+];
+```
+
+### Step 2: Run ESLint on Changed Files
+
+```bash
+# Run on entire project
+npx eslint . --ext .js,.jsx,.ts,.tsx
+
+# Or just on recently changed files
+git diff --name-only | grep -E '\.(js|jsx|ts|tsx)$' | xargs npx eslint
+```
+
+### Step 3: Interpret Compiler Violations
+
+The `react-compiler/react-compiler` rule fires when the compiler **cannot safely auto-memoize** a component or hook. Each violation means:
+- The compiler will skip optimizing that component
+- You must fix the violation OR manually add `useMemo`/`useCallback`/`React.memo`
+
+**Common violations and fixes:**
+
+| Violation | Meaning | Fix |
+|-----------|---------|-----|
+| Mutating props or state directly | Breaks React's immutability contract | Use spread / `setState` properly |
+| Reading ref during render | Refs are mutable, unsafe to memoize | Move ref reads to effects/handlers |
+| Calling hooks conditionally | Violates Rules of Hooks | Move hook to top level |
+| Side effects in render | Render must be pure | Move to `useEffect` |
+| Accessing `arguments` object | Not safe to analyze statically | Use named params |
+| Using non-stable external values | Compiler can't track mutations | Wrap in `useMemo` with explicit deps |
+
+### Step 4: Enable React Compiler in Babel (Auto-Optimize)
+
+Add to `babel.config.js`:
+```js
+module.exports = {
+  presets: ['module:@react-native/babel-preset'],
+  plugins: [
+    ['babel-plugin-react-compiler', {
+      compilationMode: 'annotation', // Start with annotation mode — only compiles components you opt in
+      // compilationMode: 'infer',   // When ready — compiles all components automatically
+    }],
+  ],
+};
+```
+
+**Annotation mode** — opt specific components in with a directive:
+```js
+function MyComponent({ items }) {
+  'use memo'; // tells compiler: optimize this component
+  const filtered = items.filter(x => x.active); // compiler auto-memoizes this
+  return <List data={filtered} />;
+}
+```
+
+**Infer mode** — compiler auto-optimizes everything it can safely analyze. Switch to this once ESLint shows zero violations.
+
+### Step 5: Verify Compiler Is Working
+
+After enabling, check Metro output on app start — you should NOT see manual `useMemo`/`useCallback` warnings if compiler is handling it.
+
+Confirm compiled output in Metro:
+```bash
+adb logcat | grep -i "react-compiler\|compiled"
+```
+
+Check that the compiler removed redundant manual memoization you wrote — it will optimize those away automatically.
+
+### Step 6: Optimize Code Based on ESLint Output
+
+For every violation the ESLint plugin reports, fix it so the compiler can take over. The goal is:
+
+```
+❌ Manual useMemo/useCallback everywhere (you maintain deps arrays)
+✅ Zero ESLint violations → compiler auto-memoizes → no manual deps to maintain
+```
+
+If a component **cannot** be made compiler-compatible (e.g., uses a third-party lib that mutates), add:
+```js
+'use no memo'; // explicitly opts out — compiler skips this component
 ```
 
 ---
