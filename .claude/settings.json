@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-skill"
+          }
+        ]
+      }
+    ]
+  }
+}

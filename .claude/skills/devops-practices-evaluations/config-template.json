@@ -1,0 +1,182 @@
+{
+  "evaluator_config": {
+    "version": "1.0",
+    "organization": "your-azure-devops-org",
+    "project": "your-project",
+    "repository": "your-repo",
+    "app_type": "web",
+    "documentation_domain": "docs.yourcompany.com"
+  },
+  "thresholds": {
+    "code_coverage": {
+      "web_app": 70,
+      "backend_api": 80,
+      "critical_paths": 100,
+      "target_improvement_per_sprint": 5
+    },
+    "security": {
+      "sast": {
+        "critical_threshold": 0,
+        "high_threshold": 5,
+        "medium_threshold": 15,
+        "low_threshold": 50,
+        "block_deployment_on_critical": true,
+        "block_deployment_on_high": false
+      },
+      "dast": {
+        "high_threshold": 10,
+        "medium_threshold": 25,
+        "block_deployment_on_high": false
+      },
+      "secret_scanning": {
+        "allow_secrets": false,
+        "block_deployment_on_secrets_found": true
+      }
+    },
+    "pr_standards": {
+      "required_approvers": 2,
+      "code_owner_enforcement": true,
+      "review_sla_hours": 24,
+      "require_conventional_commits": true,
+      "require_description": true,
+      "require_test_files": true,
+      "require_work_item_link": false
+    },
+    "repository": {
+      "trunk_based_development": {
+        "primary_branch": "main",
+        "max_feature_branch_age_days": 2,
+        "require_branch_deletion_after_merge": true,
+        "min_commits_per_week_on_main": 2
+      }
+    },
+    "pipeline": {
+      "required_stages": {
+        "web_app": [
+          "build",
+          "lint",
+          "secret_scanning",
+          "sast",
+          "dast",
+          "unit_tests",
+          "e2e_tests",
+          "performance_tests",
+          "deploy"
+        ],
+        "backend_api": [
+          "build",
+          "lint",
+          "secret_scanning",
+          "sast",
+          "dast",
+          "unit_tests",
+          "api_tests",
+          "deploy"
+        ]
+      },
+      "security_stages_must_run_before_deploy": true,
+      "max_build_time_seconds": {
+        "web_app": 300,
+        "backend_api": 180
+      },
+      "require_deployment_approval_on_high_findings": true
+    },
+    "performance": {
+      "web_app": {
+        "lcp_ms": 2500,
+        "fcp_ms": 1800,
+        "cls": 0.1,
+        "ttfb_ms": 600,
+        "fid_ms": 100
+      }
+    },
+    "deployment": {
+      "min_deployments_per_day": 1,
+      "target_deployments_per_day": 2,
+      "min_success_rate_percent": 99,
+      "max_lead_time_hours": 24,
+      "max_mttr_minutes": 60
+    },
+    "testing": {
+      "unit_tests": {
+        "web_app_min_coverage": 70,
+        "backend_api_min_coverage": 80,
+        "min_pass_rate_percent": 95
+      },
+      "e2e_tests": {
+        "min_pass_rate_percent": 95,
+        "max_flaky_test_percent": 5
+      },
+      "api_tests": {
+        "min_pass_rate_percent": 95
+      }
+    }
+  },
+  "artifact_sources": {
+    "web_scraping": {
+      "enabled": true,
+      "base_domain": "docs.yourcompany.com",
+      "endpoints": [
+        {
+          "name": "code_coverage",
+          "path": "/reports/code-coverage/",
+          "format": "html",
+          "selector": "span.coverage-score"
+        },
+        {
+          "name": "performance_metrics",
+          "path": "/reports/performance/metrics.json",
+          "format": "json"
+        },
+        {
+          "name": "sast_findings",
+          "path": "/reports/security/sast-results.json",
+          "format": "json"
+        },
+        {
+          "name": "dast_findings",
+          "path": "/reports/security/dast-results.json",
+          "format": "json"
+        },
+        {
+          "name": "e2e_tests",
+          "path": "/reports/e2e-tests/results.json",
+          "format": "json"
+        },
+        {
+          "name": "deployment_metrics",
+          "path": "/reports/deployment/metrics.json",
+          "format": "json"
+        }
+      ]
+    },
+    "azure_devops_api": {
+      "enabled": true,
+      "use_pat_token": true,
+      "api_version": "7.0"
+    }
+  },
+  "report_format": {
+    "include_json": true,
+    "include_html_dashboard": true,
+    "include_markdown": true,
+    "include_csv": false,
+    "include_raw_findings": true
+  },
+  "notification": {
+    "on_critical_findings": true,
+    "email_recipients": [
+      "devops-team@yourcompany.com",
+      "engineering-leads@yourcompany.com"
+    ],
+    "slack_webhook": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  },
+  "advanced": {
+    "parallel_evaluation": true,
+    "cache_results": true,
+    "cache_ttl_minutes": 60,
+    "retry_failed_api_calls": true,
+    "max_retries": 3,
+    "timeout_seconds": 30
+  }
+}

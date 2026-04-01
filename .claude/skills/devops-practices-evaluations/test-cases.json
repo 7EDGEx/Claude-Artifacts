@@ -1,0 +1,64 @@
+[
+  {
+    "id": "test_1_full_audit",
+    "prompt": "Evaluate our DevOps practices for the 'CoreAPI' project in Azure DevOps organization 'acme-corp'. We want to assess trunk-based development compliance, pipeline security stages, and code quality metrics. Our documentation is hosted at docs.acme.com/reports/. Please check: branch strategy compliance, PR reviewer standards, pipeline stages (build/lint/secret check/SAST/DAST/API tests), code coverage from our docs, and deployment frequency.",
+    "context": "Web application backend service",
+    "expected_output_contains": [
+      "overall_compliance_score",
+      "repository",
+      "pipeline",
+      "artifacts",
+      "findings",
+      "recommendations"
+    ]
+  },
+  {
+    "id": "test_2_pr_compliance",
+    "prompt": "Our team wants to audit PR standards across our Azure DevOps repository. Check the last 15 merged pull requests for: conventional commit compliance (feat/fix/docs/refactor), required approver count (we want 2+ reviewers), review time SLA (should be < 24 hours), and code owner enforcement. What's our current compliance level?",
+    "context": "Frontend web application",
+    "expected_output_contains": [
+      "pr_standards",
+      "conventional_commit",
+      "approvers",
+      "review_time",
+      "CODEOWNERS"
+    ]
+  },
+  {
+    "id": "test_3_pipeline_audit",
+    "prompt": "Audit our backend API pipeline for security compliance. We have stages for: Build, Lint, Secret Scanning, SAST (SonarQube), API Tests (Postman), and Deploy. Are all security stages in the correct order (before deploy)? Check if we're missing TDD metrics, DAST, or other stages. Our latest build had 2 critical SAST findings and 8 high-severity findings. Is this acceptable?",
+    "context": "Backend REST API microservice",
+    "expected_output_contains": [
+      "pipeline_stages",
+      "security_scanning",
+      "stage_order",
+      "critical",
+      "high_severity"
+    ]
+  },
+  {
+    "id": "test_4_metrics_extraction",
+    "prompt": "We host performance and code coverage reports at docs.example.com/reports/. Can you extract and evaluate: code coverage percentage from the coverage/ directory, Lighthouse performance scores (LCP, CLS, TTFB) from performance/, and security findings from security/sast-results/? Then score our compliance against web app best practices (70%+ coverage, LCP < 2.5s).",
+    "context": "Web application with public docs",
+    "expected_output_contains": [
+      "code_coverage",
+      "performance",
+      "lcp",
+      "cls",
+      "security_findings",
+      "compliance_score"
+    ]
+  },
+  {
+    "id": "test_5_trunk_based_dev",
+    "prompt": "Verify our project follows trunk-based development. Check: (1) Do we have a main/master branch? (2) How old are our feature branches? (3) Commit frequency on main? (4) Are branches deleted after merge? (5) How many long-lived branches do we have? Score our trunk-based dev maturity and recommend improvements.",
+    "context": "Multi-team repository with unclear branching strategy",
+    "expected_output_contains": [
+      "trunk_based_development",
+      "branch_strategy",
+      "feature_branches",
+      "main_branch",
+      "remediation"
+    ]
+  }
+]

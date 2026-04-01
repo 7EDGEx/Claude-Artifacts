@@ -1,0 +1,239 @@
+# Azure DevOps Pipeline — Terraform
+# Place this file at the root of your repo as azure-pipelines.yml
+# or reference it from your pipeline settings.
+#
+# Prerequisites:
+#   - An Azure DevOps Service Connection to your cloud provider
+#     (AWS: use a service connection with access key, or configure OIDC)
+#     (Azure: use an Azure Resource Manager service connection)
+#   - A variable group named 'terraform-vars' containing:
+#       TF_BACKEND_BUCKET     (S3 bucket or Azure storage account)
+#       TF_BACKEND_KEY        (state file path)
+#       TF_BACKEND_REGION     (region, AWS only)
+#       AWS_SERVICE_CONNECTION or AZURE_SERVICE_CONNECTION
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+  paths:
+    include:
+      - '**/*.tf'
+      - '**/*.tfvars'
+      - '**/*.hcl'
+
+pr:
+  branches:
+    include:
+      - main
+      - master
+  paths:
+    include:
+      - '**/*.tf'
+      - '**/*.tfvars'
+      - '**/*.hcl'
+
+variables:
+  - group: terraform-vars
+  - name: TF_VERSION
+    value: '1.5.0'
+  - name: WORKING_DIR
+    value: '$(System.DefaultWorkingDirectory)'
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+
+  # ─────────────────────────────────────────
+  # STAGE 1: Validate & Lint
+  # ─────────────────────────────────────────
+  - stage: Validate
+    displayName: Validate & Lint
+    jobs:
+      - job: validate
+        displayName: Format, Validate, Lint
+        steps:
+          - task: TerraformInstaller@1
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(TF_VERSION)
+
+          - script: terraform fmt -check -recursive
+            displayName: Terraform Format Check
+            workingDirectory: $(WORKING_DIR)
+            continueOnError: true
+
+          - script: terraform init -backend=false
+            displayName: Terraform Init (no backend)
+            workingDirectory: $(WORKING_DIR)
+
+          - script: terraform validate -no-color
+            displayName: Terraform Validate
+            workingDirectory: $(WORKING_DIR)
+
+          - script: |
+              curl -Lo /usr/local/bin/tflint.zip \
+                https://github.com/terraform-linters/tflint/releases/latest/download/tflint_linux_amd64.zip
+              unzip /usr/local/bin/tflint.zip -d /usr/local/bin
+              chmod +x /usr/local/bin/tflint
+              tflint --init
+              tflint -f compact
+            displayName: TFLint
+            workingDirectory: $(WORKING_DIR)
+            continueOnError: true
+
+  # ─────────────────────────────────────────
+  # STAGE 2: Security Scan
+  # ─────────────────────────────────────────
+  - stage: Security
+    displayName: Security Scan
+    dependsOn: Validate
+    jobs:
+      - job: checkov
+        displayName: Checkov Security Scan
+        steps:
+          - script: |
+              pip install checkov
+              checkov -d . --framework terraform --output cli --soft-fail
+            displayName: Checkov
+            workingDirectory: $(WORKING_DIR)
+            continueOnError: true
+
+  # ─────────────────────────────────────────
+  # STAGE 3: Plan
+  # ─────────────────────────────────────────
+  - stage: Plan
+    displayName: Terraform Plan
+    dependsOn: Security
+    condition: succeeded()
+    jobs:
+      - job: plan
+        displayName: Plan
+        steps:
+          - task: TerraformInstaller@1
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(TF_VERSION)
+
+          # AWS authentication via service connection
+          # Replace with AzureCLI task if targeting Azure resources
+          - task: AWSShellScript@1
+            displayName: Terraform Init & Plan
+            inputs:
+              awsCredentials: $(AWS_SERVICE_CONNECTION)
+              regionName: $(TF_BACKEND_REGION)
+              scriptType: inline
+              inlineScript: |
+                terraform init \
+                  -backend-config="bucket=$(TF_BACKEND_BUCKET)" \
+                  -backend-config="key=$(TF_BACKEND_KEY)" \
+                  -backend-config="region=$(TF_BACKEND_REGION)"
+                terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
+            workingDirectory: $(WORKING_DIR)
+
+          # ── Alternative: Azure Resource Manager authentication ──
+          # - task: AzureCLI@2
+          #   displayName: Terraform Init & Plan (Azure backend)
+          #   inputs:
+          #     azureSubscription: $(AZURE_SERVICE_CONNECTION)
+          #     scriptType: bash
+          #     scriptLocation: inlineScript
+          #     inlineScript: |
+          #       export ARM_CLIENT_ID=$servicePrincipalId
+          #       export ARM_CLIENT_SECRET=$servicePrincipalKey
+          #       export ARM_TENANT_ID=$tenantId
+          #       export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+          #       terraform init \
+          #         -backend-config="resource_group_name=$(TF_BACKEND_RG)" \
+          #         -backend-config="storage_account_name=$(TF_BACKEND_STORAGE)" \
+          #         -backend-config="container_name=tfstate" \
+          #         -backend-config="key=$(TF_BACKEND_KEY)"
+          #       terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
+          #     addSpnToEnvironment: true
+          #   workingDirectory: $(WORKING_DIR)
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish Plan Artifact
+            inputs:
+              targetPath: $(WORKING_DIR)/tfplan
+              artifact: tfplan
+              publishLocation: pipeline
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish Plan Output
+            inputs:
+              targetPath: $(WORKING_DIR)/plan_output.txt
+              artifact: plan_output
+              publishLocation: pipeline
+
+          - script: cat plan_output.txt
+            displayName: Show Plan Output
+            workingDirectory: $(WORKING_DIR)
+
+  # ─────────────────────────────────────────
+  # STAGE 4: Apply (manual approval gate)
+  # ─────────────────────────────────────────
+  - stage: Apply
+    displayName: Terraform Apply
+    dependsOn: Plan
+    condition: |
+      and(
+        succeeded(),
+        or(
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+          eq(variables['Build.SourceBranch'], 'refs/heads/master')
+        )
+      )
+    # Add an Environment with approval check in Azure DevOps:
+    # Project Settings → Environments → Create "production" → Add approval
+    jobs:
+      - deployment: apply
+        displayName: Apply
+        environment: production   # Requires manual approval configured in ADO
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: TerraformInstaller@1
+                  displayName: Install Terraform
+                  inputs:
+                    terraformVersion: $(TF_VERSION)
+
+                - task: DownloadPipelineArtifact@2
+                  displayName: Download Plan
+                  inputs:
+                    artifact: tfplan
+                    path: $(WORKING_DIR)
+
+                - task: AWSShellScript@1
+                  displayName: Terraform Apply
+                  inputs:
+                    awsCredentials: $(AWS_SERVICE_CONNECTION)
+                    regionName: $(TF_BACKEND_REGION)
+                    scriptType: inline
+                    inlineScript: |
+                      terraform init \
+                        -backend-config="bucket=$(TF_BACKEND_BUCKET)" \
+                        -backend-config="key=$(TF_BACKEND_KEY)" \
+                        -backend-config="region=$(TF_BACKEND_REGION)"
+                      terraform apply -auto-approve tfplan
+                  workingDirectory: $(WORKING_DIR)
+
+                # ── Alternative: Azure ──
+                # - task: AzureCLI@2
+                #   displayName: Terraform Apply (Azure)
+                #   inputs:
+                #     azureSubscription: $(AZURE_SERVICE_CONNECTION)
+                #     scriptType: bash
+                #     scriptLocation: inlineScript
+                #     inlineScript: |
+                #       export ARM_CLIENT_ID=$servicePrincipalId
+                #       export ARM_CLIENT_SECRET=$servicePrincipalKey
+                #       export ARM_TENANT_ID=$tenantId
+                #       export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+                #       terraform init ...
+                #       terraform apply -auto-approve tfplan
+                #     addSpnToEnvironment: true
+                #   workingDirectory: $(WORKING_DIR)
