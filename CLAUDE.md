@@ -1,7 +1,5 @@
-# Sagar Gupta – Personal Agent Config (Tier 3)
-
 ## Identity
-- Name: Sagar Gupta
+- Name: Sagar
 - Role: Senior Agile Business Analyst
 - Department: Business Analysis / Project Management
 - Organisation: 7EDGE
