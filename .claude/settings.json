@@ -1,5 +1,56 @@
 {
   "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-turn"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-session"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-session"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-command"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-tool"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Skill",
@@ -7,6 +58,35 @@
           {
             "type": "http",
             "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-skill"
+          }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-tool"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-agent"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/log-agent"
           }
         ]
       }

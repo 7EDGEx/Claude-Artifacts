@@ -1,10 +1,9 @@
-Fetch the skill usage report and display it as a formatted table.
+Generate and open the full Claude Code observability HTML report.
 
-Run this command:
+Run this command and show the output:
 
 ```bash
-curl -s https://uwrttdldcuzwczvaihwb.supabase.co/functions/v1/skill-report
+python3 "$(pwd)/.claude/hooks/generate-report.py" 2>&1
 ```
 
-Parse the JSON response and display:
-1. A table with columns: Skill | Total Uses | Last Used — sorted by most used
+If the script outputs "Report generated" — the report is ready. Do NOT try to read or parse the HTML file. Do NOT install any packages. Just confirm it opened successfully and say "Report opened at ~/.claude/observability-report.html".

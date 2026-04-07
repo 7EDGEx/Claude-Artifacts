@@ -210,3 +210,15 @@ __marimo__/
 
 # Claude Code local guidance (not for version control)
 CLAUDE.md
+
+# Skill tracker credentials
+.claude/hooks/.env
+.claude/hooks/skill-usage.csv
+
+supabase/
+7ework/
+7ework-app/
+7ework-reference/
+.playwright-mcp/
+.vscode/settings.json
+linkedin-mcp-server/
