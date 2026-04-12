@@ -2,30 +2,73 @@
 name: ui-testing
 description: >
   Compares a live web application page against a Figma design to detect UI inconsistencies.
-  User provides a Figma design link (with node ID) and the skill fetches the design via Figma MCP,
-  captures the live app page via Browser Tools MCP, then produces a structured mismatch report in chat.
-  Handles dynamic content (amounts, names, dates, IDs) by checking presence/structure only, not values.
-  Trigger when the user says "ui test", "compare with figma", "check design", "test this page against figma",
-  "run ui check", or provides a Figma link and asks to compare.
+  User provides a Figma design link (with node ID). The skill captures BOTH the app page and
+  the Figma design using Browser MCP, then produces a structured mismatch report.
+  Figma MCP is tried first; if rate-limited or unavailable, automatically falls back to
+  navigating the Figma URL in the browser and screenshotting it — no user intervention needed.
+  Trigger when the user says "compare with application", "ui test", "check design",
+  "test this page against application", "run ui check", or provides a Figma link and asks to compare with the application.
 compatibility: >
-  Requires Figma MCP (with FIGMA_ACCESS_TOKEN) and Browser Tools MCP (@agentdeskai/browser-tools-mcp)
-  connected. User must already be logged into the application in their browser before running.
+  Requires Browser MCP (@browsermcp/mcp) connected and the Chrome extension active.
+  Figma MCP is optional — used when available, skipped silently when rate-limited.
+  User must already be logged into the application in their browser before running.
 ---
 
 # UI Testing Skill
 
-Automates visual and structural comparison between a Figma design node and the live application page currently open in the browser.
+Automates visual and structural comparison between a Figma design node and the live application page.
 
 ---
 
-## Prerequisites Check
+## Step 0 — Pre-flight: Collect Inputs Before Starting
 
-Before starting, verify:
-1. Browser Tools MCP is connected (tool `browser_action` or `take_screenshot` is available)
-2. Figma MCP is connected (tool `get_figma_data` or `figma_get_file_nodes` is available)
-3. User has provided a Figma URL containing a `node-id` parameter
+**Before doing anything else**, greet the user and collect the required inputs interactively.
 
-If any prerequisite is missing, stop and tell the user what to fix. Do not proceed partially.
+Display this message to the user:
+
+---
+
+> **UI Testing — Pre-flight Checklist**
+>
+> Before we start the comparison, let's make sure everything is ready.
+>
+> **1. Figma Design Link**
+> Please share the Figma design link for the page you want to compare.
+> It should look like:
+> `https://www.figma.com/design/<FILE_KEY>/...?node-id=<NODE_ID>`
+>
+> > Tip: In Figma, right-click the frame → **Copy link** to get a link that includes the `node-id`.
+>
+> **2. Browser Setup — Please confirm the following before proceeding:**
+> - [ ] The **BrowserMCP Chrome extension** is active in your browser
+> - [ ] You have **navigated to the exact app page** you want to compare in your browser tab
+> - [ ] You are **logged into the application** (the page should be fully loaded, not a login screen)
+> - [ ] You are **logged into Figma** in the same browser
+>   *(Required as a fallback — if the Figma MCP hits its rate limit, the browser will automatically navigate to your Figma link to capture the design. If you're not logged in, it will show a login screen instead of the canvas.)*
+>
+> Once you've confirmed the above and shared the Figma link, I'll start the comparison automatically.
+
+---
+
+Wait for the user to provide:
+1. The Figma URL — required to proceed
+2. Confirmation (explicit or implied) that they are on the correct app page
+
+Once both are received, proceed to Step 1 without further prompts.
+
+If the user provides the Figma URL but does not explicitly confirm the browser setup, display a brief reminder:
+
+> "Got the Figma link! Just confirm you're on the correct app page in your browser and I'll begin."
+
+Then proceed as soon as they confirm.
+
+---
+
+## Critical Rule — Never Ask the User to Provide Screenshots
+
+If Figma MCP fails for any reason (rate limit, auth error, timeout), **do NOT ask the user to
+share a screenshot manually**. Instead, immediately execute the Browser Fallback in Step 1B below.
+The Browser MCP can navigate to Figma in the browser and capture it automatically.
 
 ---
 
@@ -36,138 +79,150 @@ The user provides a Figma URL in one of these formats:
 - `https://www.figma.com/file/<FILE_KEY>/...?node-id=<NODE_ID>`
 
 Parse from the URL:
-- `FILE_KEY` — the alphanumeric segment after `/design/` or `/file/`
-- `NODE_ID` — value of the `node-id` query parameter (may use `-` or `:` as separator, normalize to `:`)
+- `FILE_KEY` — alphanumeric segment after `/design/` or `/file/`
+- `NODE_ID` — value of `node-id` query param (normalize `-` to `:`)
 
-If no Figma URL is provided, ask the user: "Please provide the Figma design link with the node ID for the page you want to compare."
+If no Figma URL is provided, ask: "Please share the Figma design link (with node-id) for the page you want to compare."
 
 ---
 
 ## Workflow
 
-Execute all steps in order. Do not pause between steps unless an error occurs.
+Execute all steps in order. Do not pause between steps unless a blocking error occurs.
 
 ---
 
-### Step 1 — Fetch Figma Design Data
+### Step 1 — Capture App Page (do this FIRST, before touching Figma)
 
-Use Figma MCP to fetch the node. Call `get_figma_data` (or equivalent) with:
+**Why first:** Browser MCP can only see one tab at a time. Capture the app before navigating away.
+
+Use Browser MCP:
+1. Call `browser_screenshot` — capture the live app page as it currently appears
+2. Call `browser_snapshot` — get the full accessibility/DOM snapshot to read text and structure
+3. Note the current URL from the snapshot
+
+Store both the screenshot and the DOM snapshot. Do not navigate away yet.
+
+If this fails, stop and tell the user:
+> "Browser MCP is not responding. Make sure the Chrome extension is active and the browsermcp.io server is running."
+
+---
+
+### Step 2 — Fetch Figma Design
+
+Try Method A first. If it fails for any reason, immediately use Method B — no pausing, no asking the user.
+
+#### Method A — Figma MCP (preferred)
+
+Call `get_design_context` with:
 - `fileKey`: extracted FILE_KEY
 - `nodeId`: extracted NODE_ID
 
-From the response, extract and store:
+If successful, extract:
+- All text layers (labels, headings, buttons, placeholders)
+- Layout structure (nav, tables, cards, forms)
+- Tag each text as `STATIC`, `DYNAMIC`, or `PATTERN` (rules in Step 3)
 
-**A. Text Inventory** — all visible text strings in the design:
-- Collect every text layer recursively within the node
-- Tag each with its purpose using these rules:
+**If Figma MCP returns any error** (rate limit, auth, timeout, empty response) → immediately go to Method B.
 
-| Tag | Rule |
-|---|---|
-| `STATIC` | Short labels, button text, nav items, column headers, section titles, form field labels — text that never changes per user or data |
-| `DYNAMIC` | Amounts with currency symbols, dates, user names/emails, IDs, counts, percentages, status values pulled from data |
-| `PATTERN` | Greeting text like "Welcome, [Name]" or "Hello, [Name]" — verify prefix only |
+#### Method B — Browser Screenshot Fallback (automatic, no user input needed)
 
-Classification heuristics:
-- Contains `$`, `€`, `₹`, `%` → `DYNAMIC`
-- Matches date pattern (`DD/MM/YYYY`, `MMM DD`, `YYYY-MM-DD`) → `DYNAMIC`
-- All-caps short string (`ACTIVE`, `PENDING`, `PAID`) → `DYNAMIC` (status badge)
-- Long alphanumeric (length > 8, mixed chars) → `DYNAMIC` (ID/reference)
-- Contains `@` → `DYNAMIC` (email)
-- 1–4 word label ending with `:` or followed by an input → `STATIC`
-- Nav/menu item, button, heading with known app-domain words → `STATIC`
+Execute these steps in sequence:
 
-**B. Layout Inventory** — structural elements:
-- Top navigation / sidebar present?
-- Page title / heading
-- Cards, tables, grids — note count and arrangement
-- Buttons and their labels
-- Form fields and their labels
-- Empty states or placeholder text
+1. **Navigate to Figma URL**
+   ```
+   browser_navigate(url: <the Figma URL the user provided>)
+   ```
 
-**C. Color & Typography (surface level)**:
-- Primary heading font size (approximate)
-- Button colors (note if primary/secondary/danger)
-- Any obvious color-coded status indicators
+2. **Wait for the canvas to load**
+   ```
+   browser_wait(time: 15)
+   ```
+   Figma's canvas takes time to render — 15 seconds is the minimum safe wait.
 
----
+3. **Take screenshot of Figma canvas**
+   ```
+   browser_screenshot()
+   ```
+   — this captures the Figma design as rendered in the browser
 
-### Step 2 — Capture Live Application State
+   **If `browser_screenshot` times out on first attempt:**
+   - Call `browser_wait(time: 10)` to wait further
+   - Retry `browser_screenshot()` once more
+   - If it fails again, tell the user: "Figma canvas is taking too long to load. Please check that the Figma design is open and fully visible in your browser, then type 'retry'."
 
-Use Browser Tools MCP to:
+4. **Navigate back to the app page**
+   ```
+   browser_navigate(url: <the app URL captured in Step 1>)
+   ```
+   Then `browser_wait(time: 5)` to let it reload.
 
-1. **Take a screenshot** of the current browser page
-   - Call `take_screenshot` or `browser_action` with action `screenshot`
-   - Store for visual reference
+5. **Take a fresh app screenshot** (to confirm page reloaded correctly)
+   ```
+   browser_screenshot()
+   ```
 
-2. **Read the DOM** — extract visible text and structure:
-   - Call `get_page_content` or `execute_script` to get:
-     - All visible text nodes (exclude hidden elements, `display:none`, `visibility:hidden`)
-     - Page `<title>`
-     - All `<h1>`, `<h2>`, `<h3>` text content
-     - All `<button>`, `<a>` (nav links) text content
-     - All `<label>`, `<th>`, `<td>` text content
-     - All `<input>` placeholder values
-     - All status badge / chip text (elements with class names containing `badge`, `chip`, `status`, `tag`)
+Now you have two screenshots: **Figma design** and **live app**. Proceed to Step 3.
 
-3. **Extract the current URL** — note the page path for context in the report.
-
-If Browser Tools MCP cannot take a screenshot or read DOM, stop and tell the user:
-> "Browser Tools MCP is not responding. Make sure the Chrome extension is active and the BrowserTools server is running."
+Note in the report which method was used: `[Source: Figma MCP]` or `[Source: Browser Screenshot]`.
 
 ---
 
 ### Step 3 — Intelligent Comparison
 
-Compare Figma design data (Step 1) against live app data (Step 2).
+#### When Method A (Figma MCP) was used — structured comparison:
 
-#### 3A. Static Text Comparison
-For every `STATIC` tagged text from Figma:
-- Search for an exact or case-insensitive match in the live DOM text list
-- If NOT found → flag as **MISSING**
-- If found but different casing → flag as **CASE MISMATCH**
-- If found but truncated (e.g., design shows "Transaction History", app shows "Transactions") → flag as **TEXT MISMATCH**
+**Tag classification rules:**
 
-#### 3B. Dynamic Content Verification
-For every `DYNAMIC` tagged element from Figma:
-- Do NOT compare the actual value
-- Check only that a non-empty value EXISTS in the corresponding position/field in the live app
-- If the field is empty or missing → flag as **EMPTY DYNAMIC FIELD**
-- If the field exists with a value → mark as **PASS (dynamic)**
+| Tag | Rule |
+|---|---|
+| `STATIC` | Button labels, nav items, column headers, section titles, form labels — never changes per user |
+| `DYNAMIC` | Currency amounts, dates, user names/emails, IDs, counts, status badges |
+| `PATTERN` | Greeting text like "Welcome, [Name]" — verify prefix only |
 
-#### 3C. Pattern Text Verification
-For every `PATTERN` tagged text:
-- Extract the static prefix (e.g., "Welcome, " from "Welcome, John")
-- Check that the live app shows text starting with that prefix
-- If prefix matches → **PASS (pattern)**
-- If prefix missing → flag as **PATTERN MISMATCH**
+Heuristics:
+- Contains `$`, `€`, `AFA`, `₹`, `%` → `DYNAMIC`
+- Matches date pattern → `DYNAMIC`
+- All-caps short string (`ACTIVE`, `PENDING`, `PAID`) → `DYNAMIC`
+- Long alphanumeric (>8 chars, mixed) → `DYNAMIC`
+- Contains `@` → `DYNAMIC`
+- Short label ending `:` or followed by input field → `STATIC`
 
-#### 3D. Layout Structure Comparison
-Compare structural presence:
-- Navigation present in design → check if nav/sidebar exists in live DOM
-- Tables in design → check if `<table>` or grid structure exists in live DOM
-- Button count on a section → compare approximate count (±1 tolerance)
-- Cards/panels → check if similar container blocks exist
+Compare each tagged element against the DOM snapshot from Step 1:
+- `STATIC` → exact or case-insensitive match required
+- `DYNAMIC` → verify field exists and is non-empty (do not compare value)
+- `PATTERN` → verify static prefix exists
 
-Flag as **LAYOUT MISSING** if a major structural element from the design is absent.
+#### When Method B (Browser Screenshots) was used — visual comparison:
 
-#### 3E. Extra Elements (Bonus Check)
-Identify text/elements visible in the live app that are **NOT** in the Figma design:
-- Flag these as **NOT IN DESIGN** — could be unimplemented additions or accidental content
+Compare the two screenshots side by side using visual analysis. Check for:
+
+1. **Page title / heading text** — exact match
+2. **Navigation structure** — sidebar items present in both
+3. **Breadcrumb trail** — matches
+4. **Table column headers** — all headers present in both, same names
+5. **Button labels** — Filter, Export, and any other action buttons
+6. **Search bar placeholder text** — matches
+7. **Radio button labels** — All / Total Payables / Total Receivables
+8. **Section labels** — Opening Balance, Closing Balance, No. of Transactions, Sum of Total
+9. **Date display format** — note if design shows range vs app shows single date
+10. **Status badges / chips** — present and color-coded consistently
+11. **Footer row content** — count and total fields present
+12. **Pagination** — present in design vs app (may differ based on data count)
+
+For dynamic fields (amounts, names, IDs, dates): **verify presence only, not value**.
 
 ---
 
 ### Step 4 — Generate Report
 
-Output the comparison report in chat using this format:
-
----
-
 ```
 ╔══════════════════════════════════════════════════════════╗
 ║           UI COMPARISON REPORT                          ║
-║  Page   : [current URL path]                            ║
-║  Figma  : [node-id from URL]                            ║
-║  Tested : [timestamp]                                   ║
+║  Page    : [app URL path]                               ║
+║  Figma   : node-id [NODE_ID]                            ║
+║  Method  : [Figma MCP | Browser Screenshot]             ║
+║  Tested  : [timestamp]                                  ║
 ╚══════════════════════════════════════════════════════════╝
 
 SUMMARY
@@ -182,27 +237,27 @@ FAILURES  (action required)
 ────────────────────────────────────────────────────────────
 
 [F1] TEXT MISMATCH
-  Element  : Page heading / Section title / Button label
-  Figma    : "exact text from design"
-  Live App : "text found in DOM"
+  Element  : [element name]
+  Figma    : "text in design"
+  Live App : "text in app"
   Severity : High / Medium / Low
 
 [F2] MISSING ELEMENT
-  Element  : [describe what's missing]
+  Element  : [what is missing]
   Figma    : Present
-  Live App : Not found in DOM
+  Live App : Not found
   Severity : High
 
 [F3] EMPTY DYNAMIC FIELD
-  Element  : [field name/position]
+  Element  : [field name]
   Expected : Non-empty value
   Live App : Empty or absent
   Severity : Medium
 
 [F4] LAYOUT MISSING
-  Element  : [nav / table / card section etc.]
+  Element  : [structural element]
   Figma    : Present
-  Live App : Not detected in DOM
+  Live App : Not detected
   Severity : High
 
 ────────────────────────────────────────────────────────────
@@ -210,35 +265,151 @@ WARNINGS  (review recommended)
 ────────────────────────────────────────────────────────────
 
 [W1] CASE MISMATCH
-  Element  : [element description]
-  Figma    : "Text In Title Case"
-  Live App : "text in lowercase"
+  Element  : [element]
+  Figma    : "Title Case"
+  Live App : "lowercase"
 
 [W2] NOT IN DESIGN
-  Element  : [unexpected element description]
-  Live App : "[text or element found]"
-  Note     : Present in app but not in Figma — verify intentional
+  Element  : [element found in app but absent in design]
+  Note     : Verify if intentional
 
 ────────────────────────────────────────────────────────────
-PASSED (dynamic fields skipped — structure verified only)
+PASSED
 ────────────────────────────────────────────────────────────
-  ✅ [field name] — value present
-  ✅ [field name] — value present
-  ...
+  ✅ [element] — matches
+  ✅ [dynamic field] — value present (not compared)
 
 ────────────────────────────────────────────────────────────
 NOTES
 ────────────────────────────────────────────────────────────
-- Dynamic fields (amounts, dates, names, IDs) were verified
-  for presence only, not value accuracy.
-- Screenshot captured and available for visual review.
-- To raise these as Jira bugs, provide your Jira project key.
+- Dynamic fields verified for presence only, not value.
+- Source: [Figma MCP / Browser Screenshot fallback]
 ```
 
 ---
 
-If there are zero failures and zero warnings:
-> "✅ All checks passed. The live app matches the Figma design for node [NODE_ID]. No mismatches found."
+### Step 5 — Jira Bug Logging (optional, after report)
+
+Once the report is shown, immediately ask:
+
+> "Would you like me to log the failures as comments on a Jira card?
+> If yes, please paste the **Jira card link** (e.g. `https://7edge.atlassian.net/browse/PROJ-123`) and the **assignee name** to assign the bugs to."
+
+**Wait for the user's response before proceeding.**
+
+---
+
+#### Parse the Jira Card Link
+
+Extract the issue key from the URL:
+- `https://7edge.atlassian.net/browse/PROJ-123` → issue key is `PROJ-123`
+
+Use `getJiraIssue` with that key to confirm the card exists. If it doesn't exist or the link is malformed, tell the user:
+> "I couldn't find that Jira card. Please double-check the link and try again."
+
+---
+
+#### Assignee Resolution
+
+Use `lookupJiraAccountId` with the name the user provides.
+
+**If exactly one match is found:** use it directly — do not ask for confirmation.
+
+**If two or more matches are found:** display them clearly and ask the user to pick:
+
+> "I found multiple users matching '[name]'. Which one should I assign to?
+>
+> 1. Full Name — username — email@example.com
+> 2. Full Name — username — email@example.com
+>
+> Reply with the number."
+
+Wait for the user's selection, then use that account ID.
+
+**If no match is found:** ask the user:
+
+> "I couldn't find a Jira user matching '[name]'. Please check the name or provide their email address."
+
+---
+
+#### Post Comment with Mention
+
+Use `addCommentToJiraIssue` on the provided card with a single structured comment. Tag the user using Jira's mention format `[~accountId:ACCOUNT_ID]` at the top.
+
+Format the comment body exactly as below, filling in real values for each failure:
+
+```
+Hi [~accountId:ACCOUNT_ID],
+
+Please review the UI bugs listed below, identified during automated Figma-vs-Live comparison.
+
+------------------------------------------------------------
+🔍 UI BUG REPORT
+Page Tested  : [app page URL]
+Figma Node   : [NODE_ID]
+Tested On    : [timestamp]
+Source       : [Figma MCP / Browser Screenshot fallback]
+------------------------------------------------------------
+
+📋 SUMMARY
+  Total Failures : [N]
+  🔴 High        : [count]
+  🟠 Medium      : [count]
+  🟡 Low         : [count]
+
+------------------------------------------------------------
+🐛 FAILURES (Action Required)
+------------------------------------------------------------
+
+[F1] 🔴 HIGH — TEXT MISMATCH
+  Element  : [element name, e.g. "Submit button label"]
+  Expected : "[text from Figma design]"
+  Actual   : "[text found in live app]"
+  Location : [page section or component path]
+
+[F2] 🔴 HIGH — MISSING ELEMENT
+  Element  : [element name, e.g. "Export button"]
+  Expected : Present (as per Figma)
+  Actual   : Not found in live app
+  Location : [page section]
+
+[F3] 🟠 MEDIUM — EMPTY DYNAMIC FIELD
+  Element  : [field name, e.g. "Opening Balance"]
+  Expected : Non-empty value
+  Actual   : Field is empty or absent
+  Location : [page section]
+
+[F4] 🟡 LOW — LAYOUT / STRUCTURAL ISSUE
+  Element  : [element name]
+  Expected : Present (as per Figma)
+  Actual   : Not detected in DOM
+  Location : [page section]
+
+... (repeat one block per failure, ordered High → Medium → Low)
+
+------------------------------------------------------------
+ℹ️ NOTES
+  • Dynamic fields (amounts, dates, IDs) verified for presence only — values not compared.
+  • Warnings (casing, extra elements) excluded from this report.
+  • To include warnings, reply "include warnings" and I'll re-post.
+------------------------------------------------------------
+```
+
+Do NOT assign the card. Only mention the person in the comment.
+
+After posting the comment, display:
+
+```
+────────────────────────────────────────────────────────────
+JIRA UPDATED
+────────────────────────────────────────────────────────────
+  ✅ Comment posted with [N] failure(s)
+  ✅ Tagged : Full Name
+  Card : https://7edge.atlassian.net/browse/PROJ-123
+────────────────────────────────────────────────────────────
+```
+
+**Warnings (`[W1]`, `[W2]`) are not included in the comment** — they are review items only. Include them only if the user explicitly asks.
 
 ---
 
@@ -246,9 +417,9 @@ If there are zero failures and zero warnings:
 
 | Severity | Meaning |
 |---|---|
-| **High** | User-facing text wrong or missing element — breaks UX or trust |
-| **Medium** | Field empty or structural gap — may indicate data issue |
-| **Low** | Minor label difference, casing, spacing text |
+| **High** | User-facing text wrong or structural element missing |
+| **Medium** | Field empty or minor structural gap |
+| **Low** | Casing, punctuation, minor label difference |
 
 ---
 
@@ -256,18 +427,18 @@ If there are zero failures and zero warnings:
 
 | Situation | Action |
 |---|---|
-| Figma MCP unavailable | Stop. Tell user to connect Figma MCP with a valid access token. |
-| Invalid Figma URL (no node-id) | Ask user to share the URL with node-id parameter included (Right-click frame in Figma → Copy link). |
-| Figma node returns empty | Tell user the node ID may point to an empty frame or deleted component. |
-| Browser Tools MCP unavailable | Stop. Tell user to start the BrowserTools server and ensure Chrome extension is active. |
-| Page requires login (redirected to login) | Stop. Tell user to log in to the app first, then re-run. |
-| DOM read returns very little text | Warn user the page may still be loading. Ask them to confirm the page is fully loaded, then re-run. |
+| Figma MCP rate limited | **Do not stop. Do not ask user.** Immediately use Method B (browser screenshot fallback). |
+| Figma MCP auth error | Same — use Method B automatically. |
+| Figma URL has no node-id | Ask user: "Please copy the link from Figma by right-clicking the frame → Copy link, which includes node-id." |
+| Browser MCP cannot screenshot app | Stop. Tell user the extension may not be active on this tab. |
+| Figma page doesn't load in browser | Tell user to check if they are logged into Figma in Chrome, then re-run. |
+| App page redirected to login | Stop. Tell user to log in to the app first. |
 
 ---
 
 ## Notes
 
-- Never compare dynamic values (amounts, user names, dates, IDs) — only verify they exist.
-- Always take a fresh screenshot on each run — do not reuse from prior runs.
-- The skill does not modify the application or Figma file in any way.
-- Jira bug creation is planned for a future enhancement — the report structure above is intentionally formatted to map 1:1 to a Jira bug card.
+- **Never ask the user for a manual screenshot** — always use Browser MCP to capture both sides.
+- Capture the app page FIRST (Step 1) before navigating anywhere.
+- Always note in the report whether Figma MCP or browser screenshot was the source.
+- Failures are logged as Jira bugs in Step 5. Warnings are review items only — not logged unless user requests.
