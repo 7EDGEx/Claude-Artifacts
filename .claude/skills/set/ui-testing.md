@@ -334,26 +334,65 @@ Wait for the user's selection, then use that account ID.
 
 #### Post Comment with Mention
 
-Use `addCommentToJiraIssue` on the provided card with a single structured comment containing all failures. Tag the user using Jira's mention format `[~accountId:ACCOUNT_ID]` at the top of the comment:
+Use `addCommentToJiraIssue` on the provided card with a single structured comment. Tag the user using Jira's mention format `[~accountId:ACCOUNT_ID]` at the top.
+
+Format the comment body exactly as below, filling in real values for each failure:
 
 ```
-[~accountId:ACCOUNT_ID] — UI mismatches detected on [page URL] vs Figma node [NODE_ID]. Please review.
+Hi [~accountId:ACCOUNT_ID],
 
-*UI Comparison Report*
+Please review the UI bugs listed below, identified during automated Figma-vs-Live comparison.
 
-*[F1] TEXT MISMATCH — High*
-- Element: [element name]
-- Figma: "[expected text]"
-- Live App: "[actual text]"
+------------------------------------------------------------
+🔍 UI BUG REPORT
+Page Tested  : [app page URL]
+Figma Node   : [NODE_ID]
+Tested On    : [timestamp]
+Source       : [Figma MCP / Browser Screenshot fallback]
+------------------------------------------------------------
 
-*[F2] MISSING ELEMENT — High*
-- Element: [element name]
-- Figma: Present
-- Live App: Not found
+📋 SUMMARY
+  Total Failures : [N]
+  🔴 High        : [count]
+  🟠 Medium      : [count]
+  🟡 Low         : [count]
 
-... (one block per failure)
+------------------------------------------------------------
+🐛 FAILURES (Action Required)
+------------------------------------------------------------
 
-_Source: [Figma MCP / Browser Screenshot] | Tested: [timestamp]_
+[F1] 🔴 HIGH — TEXT MISMATCH
+  Element  : [element name, e.g. "Submit button label"]
+  Expected : "[text from Figma design]"
+  Actual   : "[text found in live app]"
+  Location : [page section or component path]
+
+[F2] 🔴 HIGH — MISSING ELEMENT
+  Element  : [element name, e.g. "Export button"]
+  Expected : Present (as per Figma)
+  Actual   : Not found in live app
+  Location : [page section]
+
+[F3] 🟠 MEDIUM — EMPTY DYNAMIC FIELD
+  Element  : [field name, e.g. "Opening Balance"]
+  Expected : Non-empty value
+  Actual   : Field is empty or absent
+  Location : [page section]
+
+[F4] 🟡 LOW — LAYOUT / STRUCTURAL ISSUE
+  Element  : [element name]
+  Expected : Present (as per Figma)
+  Actual   : Not detected in DOM
+  Location : [page section]
+
+... (repeat one block per failure, ordered High → Medium → Low)
+
+------------------------------------------------------------
+ℹ️ NOTES
+  • Dynamic fields (amounts, dates, IDs) verified for presence only — values not compared.
+  • Warnings (casing, extra elements) excluded from this report.
+  • To include warnings, reply "include warnings" and I'll re-post.
+------------------------------------------------------------
 ```
 
 Do NOT assign the card. Only mention the person in the comment.
