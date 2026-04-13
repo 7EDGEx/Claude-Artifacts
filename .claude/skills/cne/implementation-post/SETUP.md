@@ -1,64 +1,95 @@
 # Setup Guide: Implementation Post Skill
 
-This skill helps you document implementations and publish them to the 7EDGE Community. It works across **Claude Code CLI**, **Claude Desktop**, and **Claude Web**.
+This skill helps you document implementations and publish them to the 7EDGE Community. It works with **Claude Code** and **Claude Desktop** on all platforms (Mac, Windows, Linux).
 
 **Prerequisite:** You need a Discourse API key from `https://community.7edge.com`. If you don't have one, generate it in your user preferences (or contact an admin).
 
 ---
 
-## Quick Start
+## Quick Start: One Unified Installer
 
-### Claude Code CLI — Plug & Play
+We've combined Claude Code and Claude Desktop into a **single `install.sh` script** that automatically detects which platform you're using.
 
-Run this from the root of any project:
+### Step 1: Download the Script
 
 ```bash
-bash .claude/skills/implementation-post/install.sh
+curl -fsSL https://raw.githubusercontent.com/Khaleelibrahimofficial/Claude-Artifacts/implementation-post-local-mcp/.claude/skills/cne/implementation-post/install.sh -o install.sh
+chmod +x install.sh
 ```
 
-The script will:
-- Copy the skill into `.claude/skills/implementation-post/`
-- Set up the Discourse MCP server in `.mcp.json`
-- Configure `.claude/settings.local.json`
+### Step 2: Run It From Your Platform
 
-Then restart Claude Code in that directory. Done!
+#### 🍎 **macOS** (Terminal app)
+```bash
+./install.sh
+# Follow the prompts to choose Claude Code or Claude Desktop
+```
+
+#### 🪟 **Windows** (PowerShell)
+```powershell
+# Open PowerShell and navigate to where you saved install.sh
+bash install.sh
+
+# If bash isn't recognized, you have a few options:
+# 1. Install Git for Windows (includes bash)
+# 2. Use Windows Subsystem for Linux (WSL)
+# 3. Install Node directly and use the installer this way
+```
+
+#### 🐧 **Linux** (Terminal/Bash)
+```bash
+bash install.sh
+```
+
+### Step 3: Choose Your Platform
+
+The script will ask:
+```
+Which version are you installing for?
+  1) Claude Code (CLI, Web app, IDE extensions)
+  2) Claude Desktop (native Mac/Windows/Linux app)
+```
 
 ---
 
-### Claude Desktop — Plug & Play
+## Installation Paths
 
-Run this once (on your machine):
+### For Claude Code
 
+If you choose **Claude Code**, the script will ask where to run from:
+
+**Global Installation** (available in all projects):
 ```bash
-bash /path/to/implementation-post/install-desktop.sh
+cd ~                    # Go to home directory
+bash install.sh         # Installs to ~/.claude/
 ```
 
-The script will:
+**Project Installation** (available only in this project):
+```bash
+cd /path/to/my/project  # Go to your project
+bash install.sh         # Installs to ./. claude/
+```
+
+Then restart Claude Code and the skill appears in `/skills`.
+
+### For Claude Desktop
+
+If you choose **Claude Desktop**, the script will:
 - Detect your OS and find the right config location
-- Add the Discourse MCP server to `claude_desktop_config.json`
-- Print instructions for the next step
+- Add the MCP server to `claude_desktop_config.json`
+- Ask for credentials
 
 Then:
 1. Open Claude Desktop
 2. Create or open a **Project**
-3. Go to Project Settings → **Instructions** (or Custom Instructions)
+3. Go to Project Settings → **Instructions**
 4. Paste the full contents of `SKILL.md`
 5. Save and restart Claude Desktop
 
----
-
-### Claude Web (claude.ai) — No MCP (Manual Publish)
-
-Claude Web doesn't support local MCP servers, but you can still use the skill:
-
-1. Go to **claude.ai** and create or open a Project
-2. Go to **Project Instructions**
-3. Paste the full contents of `SKILL.md`
-4. Save
-
-When publishing, the skill will give you the finished post. You'll either:
-- Go to `https://community.7edge.com/new-topic`, select a category, and paste
-- Or run a curl command to publish (see the SKILL.md fallback instructions)
+**Config locations:**
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/claude/claude_desktop_config.json`
 
 ---
 
@@ -135,8 +166,20 @@ Before publishing posts, you need a credentials file on your machine.
 If someone else on your team wants to use this skill:
 
 1. They need their own Discourse account and API key (see above)
-2. They create their own `~/.config/discourse/7edge-profile.json` with their credentials
-3. They run `install.sh` in their project (Claude Code) or `install-desktop.sh` (Desktop)
-4. The scripts will use their own credentials automatically
+2. They run `bash install.sh` on their machine
+3. The script will ask if they're using Claude Code or Claude Desktop
+4. Their credentials will be saved in `~/.config/discourse/7edge-profile.json`
 
 Each person's posts will appear under their own name on the community.
+
+---
+
+## What Doesn't Work Where
+
+| Feature | Claude Code | Claude Desktop | Claude Web |
+|---|---|---|---|
+| Automatic skill loading | ✅ Yes | ⚠️ Manual setup | ❌ Not supported |
+| Publish to Discourse | ✅ Automatic | ✅ Automatic | ⚠️ Manual copy-paste |
+| MCP server support | ✅ Full | ✅ Full | ❌ No local MCP |
+
+For Claude Web (claude.ai), you'll need to manually paste the output to https://community.7edge.com or use a curl command.
