@@ -23,7 +23,7 @@ else
   echo "✓ Skill files downloaded to .claude/skills/implementation-post/"
 fi
 
-# 2. Add MCP server to .mcp.json (create if missing, merge if exists)
+# 2. Add MCP server to .mcp.json (create if missing, skip if entry already present)
 MCP_FILE="$TARGET_DIR/.mcp.json"
 if [ ! -f "$MCP_FILE" ]; then
   cat > "$MCP_FILE" << 'EOF'
@@ -37,13 +37,16 @@ if [ ! -f "$MCP_FILE" ]; then
 }
 EOF
   echo "✓ Created .mcp.json with 7edge-community-local server"
+elif grep -q "7edge-community-local" "$MCP_FILE"; then
+  echo "✓ .mcp.json already contains 7edge-community-local — skipping"
 else
-  echo "⚠  .mcp.json already exists — please manually add this block if not present:"
+  echo "⚠  .mcp.json exists but is missing 7edge-community-local."
+  echo "   Add this entry manually inside the \"mcpServers\" block:"
   echo ""
-  echo '  "7edge-community-local": {'
-  echo '    "command": "npx",'
-  echo '    "args": ["-y", "@discourse/mcp@latest", "--profile", "${HOME}/.config/discourse/7edge-profile.json"]'
-  echo '  }'
+  echo '    "7edge-community-local": {'
+  echo '      "command": "npx",'
+  echo '      "args": ["-y", "@discourse/mcp@latest", "--profile", "${HOME}/.config/discourse/7edge-profile.json"]'
+  echo '    }'
 fi
 
 # 3. Create/update settings.local.json
@@ -75,8 +78,8 @@ else
   echo "  https://community.7edge.com/u/YOUR_USERNAME/preferences/api-keys"
   echo "────────────────────────────────────────────────────────────────"
   echo ""
-  read -p "Your Discourse username: " DISCOURSE_USERNAME
-  read -p "Your API key: " DISCOURSE_API_KEY
+  read -p "Your Discourse username: " DISCOURSE_USERNAME </dev/tty || true
+  read -p "Your API key: " DISCOURSE_API_KEY </dev/tty || true
   echo ""
 
   if [ -z "$DISCOURSE_USERNAME" ] || [ -z "$DISCOURSE_API_KEY" ]; then
