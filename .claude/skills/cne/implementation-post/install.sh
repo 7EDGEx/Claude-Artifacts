@@ -3,14 +3,25 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TARGET_DIR="$(pwd)"
+BASE_URL="https://raw.githubusercontent.com/Khaleelibrahimofficial/Claude-Artifacts/implementation-post-local-mcp/.claude/skills/cne/implementation-post"
 
 echo "Installing implementation-post skill into: $TARGET_DIR"
 
-# 1. Copy skill files
+# 1. Copy or download skill files
 mkdir -p "$TARGET_DIR/.claude/skills/implementation-post"
-cp "$SCRIPT_DIR/SKILL.md" "$TARGET_DIR/.claude/skills/implementation-post/SKILL.md"
-cp "$SCRIPT_DIR/SETUP.md" "$TARGET_DIR/.claude/skills/implementation-post/SETUP.md"
-echo "✓ Skill files copied to .claude/skills/implementation-post/"
+
+if [ -f "$SCRIPT_DIR/SKILL.md" ]; then
+  # Local files exist — copy them
+  cp "$SCRIPT_DIR/SKILL.md" "$TARGET_DIR/.claude/skills/implementation-post/SKILL.md"
+  cp "$SCRIPT_DIR/SETUP.md" "$TARGET_DIR/.claude/skills/implementation-post/SETUP.md"
+  echo "✓ Skill files copied to .claude/skills/implementation-post/"
+else
+  # Running via curl | bash — download from GitHub
+  echo "Downloading skill files from GitHub..."
+  curl -fsSL "$BASE_URL/SKILL.md" -o "$TARGET_DIR/.claude/skills/implementation-post/SKILL.md"
+  curl -fsSL "$BASE_URL/SETUP.md" -o "$TARGET_DIR/.claude/skills/implementation-post/SETUP.md"
+  echo "✓ Skill files downloaded to .claude/skills/implementation-post/"
+fi
 
 # 2. Add MCP server to .mcp.json (create if missing, merge if exists)
 MCP_FILE="$TARGET_DIR/.mcp.json"
